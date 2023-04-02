@@ -51,7 +51,7 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'trivia.urls'
 
-# CSRF_TRUSTED_ORIGINS = ['https://trivia.herokuapp.com/*', 'http://127.0.0.1:8000/*']
+CSRF_TRUSTED_ORIGINS = ['https://trivia-bck.herokuapp.com/*', 'http://127.0.0.1:8000/*']
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
