@@ -85,7 +85,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def start_game(self, rounds):
         from trivia_api.models import Game
-        
+
         game = Game.objects.get(id=self.game_id)
         game.started = datetime.datetime.now()
         game.rounds_number = rounds
