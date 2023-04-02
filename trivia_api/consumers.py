@@ -3,8 +3,6 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 import datetime
 
-from trivia_api.models import Game
-
 
 class TriviaConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
@@ -79,11 +77,15 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def get_game_params(self):
+        from trivia_api.models import Game
+
         game = Game.objects.get(id=self.game_id)
         return game.creator, game.is_open, game.players_count
 
     @database_sync_to_async
     def start_game(self, rounds):
+        from trivia_api.models import Game
+        
         game = Game.objects.get(id=self.game_id)
         game.started = datetime.datetime.now()
         game.rounds_number = rounds
