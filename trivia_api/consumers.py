@@ -36,15 +36,18 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
     async def action_start(self, rounds=None):
         creator, is_open, player_count = await self.get_game_params()
-        if self.scope['user'] == creator:
+        print(creator)
+        print(self.scope['user'])
+        if self.scope['user'].id == creator.id:
             if player_count > 1:
                 if is_open:
                     if rounds is not None and rounds >= player_count:
-                        await self.start_game(rounds)
+                        players = await self.start_game(rounds)
                         await self.channel_layer.group_send(
                             self.group_name, {"type": "game_message", "message": {
                                 'type': 'game_started',
                                 'rounds': rounds,
+                                'players': players,
                             }}
                         )
                     else:
@@ -90,3 +93,6 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         game.started = datetime.datetime.now()
         game.rounds_number = rounds
         game.save()
+
+        return [{'username': p.username, 'userid': p.id} for p in game.players.all()]
+
