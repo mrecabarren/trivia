@@ -1,6 +1,9 @@
 from django.contrib.auth.models import User
 from django.db import models
 
+import datetime
+import random
+
 
 class OpenGamesManager(models.Manager):
     def get_queryset(self):
@@ -37,6 +40,36 @@ class Game(models.Model):
     @property
     def is_open(self):
         return self.started is None
+
+    @property
+    def remaining_rounds(self):
+        return self.rounds_number - self.rounds.count()
+
+    @property
+    def current_round(self):
+        if self.rounds.count() > 0:
+            return self.rounds.latest('started')
+        else:
+            return None
+
+    def next_round(self):
+        if self.remaining_rounds > 0:
+            Round.objects.create(game=self,
+                                 nosy=self.next_nosy(),
+                                 started=datetime.datetime.now())
+            return True
+        else:
+            return False
+
+    def next_nosy(self):
+        # random without repeat
+        if self.rounds.count() <= self.players_count:
+            p_ready = [r.noisy.id for r in self.rounds.all()]
+            p_avalable = [p for p in self.players.all() if p.id not in p_ready]
+            return random.choice(p_avalable)
+        # TODO: worse score, but not repeat
+        else:
+            return self.creator
 
 
 class Round(models.Model):

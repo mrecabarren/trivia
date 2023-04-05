@@ -50,6 +50,15 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                                 'players': players,
                             }}
                         )
+
+                        round_number, nosy_id = await self.next_round()
+                        await self.channel_layer.group_send(
+                            self.group_name, {"type": "game_message", "message": {
+                                'type': 'round_started',
+                                'round_number': round_number,
+                                'nosy_id': nosy_id,
+                            }}
+                        )
                     else:
                         await self.send_json(content={
                             'type': 'error',
@@ -96,3 +105,12 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
         return [{'username': p.username, 'userid': p.id} for p in game.players.all()]
 
+    @database_sync_to_async
+    def next_round(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        if game.next_round():
+            return game.rounds.count(), game.current_round.nosy.id
+        else:
+            return False
