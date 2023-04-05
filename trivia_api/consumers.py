@@ -27,6 +27,8 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         print(content)
         if content['action'] == 'start':
             await self.action_start(int(content['rounds']))
+        elif content['action'] == 'question':
+            await self.action_question(content['text'])
 
     async def game_message(self, event):
         message = event["message"]
@@ -36,8 +38,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
     async def action_start(self, rounds=None):
         creator, is_open, player_count = await self.get_game_params()
-        print(creator)
-        print(self.scope['user'])
+
         if self.scope['user'].id == creator.id:
             if player_count > 1:
                 if is_open:
@@ -80,6 +81,36 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                 'message': 'La partida solo la puede iniciar quien la creó'
             })
 
+    async def action_question(self, q_text):
+        creator, is_open, player_count = await self.get_game_params()
+
+        if not is_open:
+            round, nosy = await self.get_current_round()
+            if self.scope['user'].id == nosy.id:
+                if round.question_arrived is None:
+                    await self.save_question(q_text)
+                    await self.channel_layer.group_send(
+                        self.group_name, {"type": "game_message", "message": {
+                            'type': 'round_question',
+                            'question': q_text,
+                        }}
+                    )
+                else:
+                    await self.send_json(content={
+                        'type': 'error',
+                        'message': 'Ya se entregó la pregunta de esta ronda'
+                    })
+            else:
+                await self.send_json(content={
+                    'type': 'error',
+                    'message': 'Solo el pregunton puede enviar la pregunta de la ronda'
+                })
+        else:
+            await self.send_json(content={
+                'type': 'error',
+                'message': 'El juego aun no comienza'
+            })
+
     @database_sync_to_async
     def verify_player(self):
         if self.scope['user'].is_anonymous:
@@ -114,3 +145,24 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             return game.rounds.count(), game.current_round.nosy.id
         else:
             return False
+
+    @database_sync_to_async
+    def get_current_round(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        if round is None:
+            return None
+        else:
+            return round, round.nosy
+
+    @database_sync_to_async
+    def save_question(self, q_text):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        round.question = q_text
+        round.question_arrived = datetime.datetime.now()
+        round.save()

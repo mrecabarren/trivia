@@ -43,7 +43,7 @@ class Game(models.Model):
 
     @property
     def remaining_rounds(self):
-        return self.rounds_number - self.rounds.count()
+        return self.rounds_number - self.rounds.count() if self.rounds_number is not None else None
 
     @property
     def current_round(self):
@@ -79,6 +79,8 @@ class Round(models.Model):
     question = models.TextField(null=True, blank=True, default=None)
 
     started = models.DateTimeField(auto_now_add=True, blank=True)
+    question_arrived = models.DateTimeField(null=True, blank=True, default=None)
+    answer_ended = models.DateTimeField(null=True, blank=True, default=None)
     ended = models.DateTimeField(null=True, blank=True, default=None)
 
     def __str__(self):

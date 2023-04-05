@@ -5,13 +5,13 @@ from trivia_api.models import Game, Round, Move, Qualification, Fault
 
 @admin.register(Game)
 class GameAdmin(admin.ModelAdmin):
-    list_display = ('name', 'created', 'creator', 'players_count', 'is_open', 'started', 'ended')
+    list_display = ('name', 'created', 'creator', 'players_count', 'is_open', 'started', 'rounds_number', 'remaining_rounds')
     list_filter = ('creator', 'started', 'ended')
 
 
 @admin.register(Round)
 class RoundAdmin(admin.ModelAdmin):
-    list_display = ('game', 'started', 'nosy')
+    list_display = ('game', 'started', 'nosy', 'question')
 
 
 @admin.register(Move)
