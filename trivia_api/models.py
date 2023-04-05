@@ -86,6 +86,15 @@ class Round(models.Model):
     def __str__(self):
         return f'{self.started} [{self.game}]'
 
+    def add_answer(self, player, answer):
+        if self.moves.filter(player=player).count() == 0:
+            move = Move.objects.create(round=self,
+                                       player=player,
+                                       answer=answer)
+            return move
+        else:
+            return None
+
 
 class Move(models.Model):
     round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name='moves')
