@@ -5,6 +5,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 
 from trivia_api.models import Game
 from trivia_api.serializers import GameSerializer
@@ -55,3 +56,8 @@ class GameViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         instance = serializer.save(creator=self.request.user)
         instance.players.add(self.request.user)
+
+    def perform_destroy(self, instance):
+        if not instance.creator.id == self.request.user.id:
+            raise PermissionDenied("You are not allowed to perform this action.")
+        instance.delete()
