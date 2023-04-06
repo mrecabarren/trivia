@@ -14,7 +14,6 @@ def get_user(validated_token):
 	try:
 		user = get_user_model().objects.get(id=validated_token["user_id"])
 		# return get_user_model().objects.get(id=toke_id)
-		print(f"{user}")
 		return user
 	except:
 		from django.contrib.auth.models import AnonymousUser
@@ -30,16 +29,13 @@ class JwtAuthMiddleware(BaseMiddleware):
 		from rest_framework_simplejwt.tokens import UntypedToken
 
 		token = parse_qs(scope["query_string"].decode("utf8"))["token"][0]
-		print(token)
 
 		try:
 			UntypedToken(token)
 		except (InvalidToken, TokenError) as e:
-			print(e)
 			return None
 		else:
 			decoded_data = jwt_decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-			print(decoded_data)
 			scope["user"] = await get_user(validated_token=decoded_data)
 
 		return await super().__call__(scope, receive, send)

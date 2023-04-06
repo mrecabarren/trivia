@@ -61,12 +61,23 @@ class Game(models.Model):
         else:
             return False
 
+    def restart_round(self):
+        c_round = self.current_round
+        if c_round is not None:
+            c_round.nosy = None
+            c_round.save()
+
+            c_round.started = datetime.datetime.now()
+            c_round.nosy = self.next_nosy()
+            c_round.save()
+
     def next_nosy(self):
         # random without repeat
         if self.rounds.count() <= self.players_count:
-            p_ready = [r.noisy.id for r in self.rounds.all()]
-            p_avalable = [p for p in self.players.all() if p.id not in p_ready]
-            return random.choice(p_avalable)
+            p_ready = [r.nosy.id for r in self.rounds.all() if r.nosy is not None]
+            p_available = [p for p in self.players.all() if p.id not in p_ready]
+
+            return random.choice(p_available)
         # TODO: worse score, but not repeat
         else:
             return self.creator
@@ -75,7 +86,7 @@ class Game(models.Model):
 class Round(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='rounds')
 
-    nosy = models.ForeignKey(User, on_delete=models.CASCADE)
+    nosy = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, default=None)
     question = models.TextField(null=True, blank=True, default=None)
 
     started = models.DateTimeField(auto_now_add=True, blank=True)

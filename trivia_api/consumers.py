@@ -1,3 +1,5 @@
+import asyncio
+
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
@@ -12,8 +14,6 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         if await self.verify_player():
             self.group_name = f'game_{self.game_id}'
 
-            print(f'Conectado: {self.channel_name}')
-
             await self.channel_layer.group_add(self.group_name, self.channel_name)
             await self.accept()
 
@@ -22,7 +22,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive_json(self, content=None):
-        print(content)
+        print(f'{self.scope["user"]} -> {content}`')
         if content['action'] == 'start':
             await self.action_start(int(content['rounds']))
         elif content['action'] == 'question':
@@ -53,13 +53,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                         )
 
                         round_number, nosy_id = await self.next_round()
-                        await self.channel_layer.group_send(
-                            self.group_name, {"type": "game_message", "message": {
-                                'type': 'round_started',
-                                'round_number': round_number,
-                                'nosy_id': nosy_id,
-                            }}
-                        )
+                        await self.start_round_message(round_number, nosy_id)
                     else:
                         await self.send_json(content={
                             'type': 'error',
@@ -145,12 +139,29 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                 'message': 'El juego aun no comienza'
             })
 
+    async def start_round_message(self, round_number, nosy_id):
+        await self.channel_layer.group_send(
+            self.group_name, {"type": "game_message", "message": {
+                'type': 'round_started',
+                'round_number': round_number,
+                'nosy_id': nosy_id,
+            }}
+        )
+        self.question_timer_task = asyncio.create_task(self.round_question_timer())
+
     @database_sync_to_async
     def verify_player(self):
         if self.scope['user'].is_anonymous:
             return False
         else:
             return self.scope['user'].games.filter(id=self.game_id).exists()
+
+    @database_sync_to_async
+    def get_game_base(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        return game
 
     @database_sync_to_async
     def get_game_params(self):
@@ -210,3 +221,29 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         move = round.add_answer(self.scope['user'], a_text)
 
         return move
+
+    @database_sync_to_async
+    def restart_round(self):
+        from trivia_api.models import Game
+        game = Game.objects.get(id=self.game_id)
+
+        game.restart_round()
+
+        return game.rounds.count(), game.current_round.nosy
+
+    async def round_question_timer(self):
+        game = await self.get_game_base()
+
+        await asyncio.sleep(game.question_time)
+        c_round, nosy = await self.get_current_round()
+
+        if c_round.question is None:
+            # TODO: falta del nosy
+            await self.channel_layer.group_send(
+                self.group_name, {"type": "game_message", "message": {
+                    'type': 'question_time_ended',
+                }}
+            )
+            round_number, nosy = await self.restart_round()
+
+            await self.start_round_message(round_number, nosy.id)
