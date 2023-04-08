@@ -11,6 +11,27 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username']
 
 
+class PlayerSerializer(serializers.ModelSerializer):
+    games_created = serializers.SerializerMethodField()
+    games_joined = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'games_created', 'games_joined']
+
+    def get_games_created(self, obj):
+        return GameLightSerializer(
+            Game.objects.filter(creator=obj).all(),
+            many=True
+        ).data
+
+    def get_games_joined(self, obj):
+        return GameLightSerializer(
+            Game.objects.filter(players__id=obj.id).all(),
+            many=True
+        ).data
+
+
 class GameSerializer(serializers.ModelSerializer):
     creator = UserSerializer(read_only=True)
     created = serializers.DateTimeField(read_only=True)
@@ -56,4 +77,16 @@ class GameSerializer(serializers.ModelSerializer):
                     'El valor para ANSWER TIME no es uno de los permitidos')
         return value
 
+
+class GameLightSerializer(serializers.ModelSerializer):
+    creator = UserSerializer(read_only=True)
+    created = serializers.DateTimeField(read_only=True)
+    player_count = serializers.IntegerField(
+        source='players.count', read_only=True
+    )
+
+    class Meta:
+        model = Game
+        fields = ['id', 'name', 'creator', 'created', 'player_count', 'question_time', 'answer_time', 'rounds_number',
+                  'started', 'ended']
 

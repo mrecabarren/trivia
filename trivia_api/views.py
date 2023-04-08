@@ -2,13 +2,14 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from rest_framework import viewsets, status
+from rest_framework.views import APIView
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 
 from trivia_api.models import Game
-from trivia_api.serializers import GameSerializer
+from trivia_api.serializers import GameSerializer, PlayerSerializer
 
 
 class GameViewSet(viewsets.ModelViewSet):
@@ -61,3 +62,12 @@ class GameViewSet(viewsets.ModelViewSet):
         if not instance.creator.id == self.request.user.id:
             raise PermissionDenied("You are not allowed to perform this action.")
         instance.delete()
+
+
+class ProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        serializer = PlayerSerializer(request.user)
+
+        return Response(serializer.data)

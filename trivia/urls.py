@@ -21,7 +21,7 @@ from rest_framework import routers
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from trivia.views import RegistrationView
-from trivia_api.views import GameViewSet
+from trivia_api.views import GameViewSet, ProfileView
 
 router = routers.SimpleRouter()
 router.register('games', GameViewSet)
@@ -29,6 +29,7 @@ router.register('games', GameViewSet)
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('registration/', csrf_exempt(RegistrationView.as_view())),
+    path('api/profile/', csrf_exempt(ProfileView.as_view())),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/', include(router.urls)),
