@@ -1,18 +1,33 @@
+from django.contrib.auth.models import User
+
 from rest_framework import serializers
 
 from trivia_api.models import Game
 
 
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username']
+
+
 class GameSerializer(serializers.ModelSerializer):
-    creator = serializers.PrimaryKeyRelatedField(read_only=True)
+    creator = UserSerializer(read_only=True)
     created = serializers.DateTimeField(read_only=True)
     player_count = serializers.IntegerField(
         source='players.count', read_only=True
     )
+    players = UserSerializer(read_only=True, many=True)
+    i_can_start = serializers.SerializerMethodField()
 
     class Meta:
         model = Game
         fields = '__all__'
+
+    def get_i_can_start(self, obj):
+        if obj.creator.id == self.context['request'].user.id:
+            return True
+        return False
 
     def validate_name(self, value):
         if len(value) < 3:
@@ -40,3 +55,5 @@ class GameSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     'El valor para ANSWER TIME no es uno de los permitidos')
         return value
+
+
