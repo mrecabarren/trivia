@@ -54,6 +54,61 @@ class GameViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_423_LOCKED
             )
 
+    @action(
+        detail=True,
+        methods=['post'],
+    )
+    def unjoin_game(self, request, pk=None):
+        game = self.get_object()
+
+        if game.is_open:
+            if game.creator.id != self.request.user.id:
+                if game.players.filter(id=self.request.user.id).exists():
+                    game.players.remove(self.request.user)
+
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        f'game_{game.id}',
+                        {
+                            'type': "game_message",
+                            'message': {'type': 'player_unjoined',
+                                        'userid': self.request.user.id,
+                                        'username': self.request.user.username}
+                        }
+                    )
+
+                    return Response(
+                        data={
+                            "message": "Te has desvinculado correctamente del juego.",
+                            "game_id": game.id,
+                        },
+                        status=status.HTTP_200_OK
+                    )
+                else:
+                    return Response(
+                        data={
+                            "message": "El usuario que se quiere desvincular no está inscrito en el juego.",
+                            "game_id": game.id,
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            else:
+                return Response(
+                    data={
+                        "message": "El crador del juego no puede desvincularse.",
+                        "game_id": game.id,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            return Response(
+                data={
+                    "message": "El juego ya comenzó, no permite desvinculare.",
+                    "game_id": game.id,
+                },
+                status=status.HTTP_423_LOCKED
+            )
+
     def perform_create(self, serializer):
         instance = serializer.save(creator=self.request.user)
         instance.players.add(self.request.user)
