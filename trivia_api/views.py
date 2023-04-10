@@ -116,6 +116,17 @@ class GameViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if not instance.creator.id == self.request.user.id:
             raise PermissionDenied("You are not allowed to perform this action.")
+
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'game_{instance.id}',
+            {
+                'type': "game_message",
+                'message': {'type': 'game_deleted',
+                            'userid': instance.id,
+                            }
+            }
+        )
         instance.delete()
 
 
