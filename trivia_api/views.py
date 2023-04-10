@@ -123,7 +123,7 @@ class GameViewSet(viewsets.ModelViewSet):
             {
                 'type': "game_message",
                 'message': {'type': 'game_deleted',
-                            'userid': instance.id,
+                            'game': instance.id,
                             }
             }
         )
