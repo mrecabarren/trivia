@@ -7,6 +7,9 @@ import datetime
 
 
 class TriviaConsumer(AsyncJsonWebsocketConsumer):
+    DELTA_TIME = 2
+    QUALIFY_TIME = 90
+
     async def connect(self):
         self.game_id = self.scope["url_route"]["kwargs"]["game_id"]
 
@@ -89,6 +92,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                             'question': q_text,
                         }}
                     )
+                    self.answer_timer_task = asyncio.create_task(self.round_answer_timer())
                 else:
                     await self.send_json(content={
                         'type': 'error',
@@ -231,10 +235,18 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
         return game.rounds.count(), game.current_round.nosy
 
+    @database_sync_to_async
+    def get_players_without_move(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        return round.missing_players
+
     async def round_question_timer(self):
         game = await self.get_game_base()
 
-        await asyncio.sleep(game.question_time)
+        await asyncio.sleep(game.question_time + self.DELTA_TIME)
         c_round, nosy = await self.get_current_round()
 
         if c_round.question is None:
@@ -247,3 +259,31 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             round_number, nosy = await self.restart_round()
 
             await self.start_round_message(round_number, nosy.id)
+
+    async def round_answer_timer(self):
+        game = await self.get_game_base()
+
+        await asyncio.sleep(game.answer_time + self.DELTA_TIME)
+
+        await self.channel_layer.group_send(
+            self.group_name, {"type": "game_message", "message": {
+                'type': 'answer_time_ended',
+            }}
+        )
+
+        missing_players = await self.get_players_without_move()
+
+        for p in missing_players:
+            # TODO: falta del jugador
+            pass
+
+        self.qualify_timer_task = asyncio.create_task(self.round_qualify_timer())
+
+    async def round_qualify_timer(self):
+        # TODO: solo comenzarlo si faltan calificaciones
+        await asyncio.sleep(self.QUALIFY_TIME + self.DELTA_TIME)
+
+        game = await self.get_game_base()
+        # TODO: Revisar si quedan evaluaciones pendientes
+
+

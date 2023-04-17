@@ -106,6 +106,12 @@ class Round(models.Model):
         else:
             return None
 
+    @property
+    def missing_players(self):
+        move_players = [m.player.id for m in self.moves]
+
+        return [p for p in self.game.players.all() if p.id not in move_players]
+
 
 class Move(models.Model):
     round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name='moves')
