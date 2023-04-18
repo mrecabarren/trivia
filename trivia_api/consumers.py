@@ -32,6 +32,8 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             await self.action_question(content['text'])
         elif content['action'] == 'answer':
             await self.action_answer(content['text'])
+        elif content['action'] == 'qualify':
+            await self.action_qualify(int(content['userid']), int(content['grade']))
 
     async def game_message(self, event):
         message = event["message"]
@@ -115,27 +117,63 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         if not is_open:
             round, nosy = await self.get_current_round()
 
-            if round.answer_ended is None:
-                move = await self.save_answer(a_text)
+            if round.question_arrived is not None:
+                if round.answer_ended is None:
+                    move = await self.save_answer(a_text)
 
-                if move is not None:
-                    if self.scope['user'].id != nosy.id:
-                        await self.channel_layer.group_send(
-                            self.group_name, {"type": "game_message", 'userid': nosy.id, "message": {
-                                'type': 'round_answer',
-                                'answer': a_text,
-                                'userid': self.scope['user'].id,
-                            }}
-                        )
+                    if move is not None:
+                        if self.scope['user'].id != nosy.id:
+                            await self.channel_layer.group_send(
+                                self.group_name, {"type": "game_message", 'userid': nosy.id, "message": {
+                                    'type': 'round_answer',
+                                    'answer': a_text,
+                                    'userid': self.scope['user'].id,
+                                }}
+                            )
+                    else:
+                        await self.send_json(content={
+                            'type': 'error',
+                            'message': 'No se puede cambiar la respuesta previamente enviada'
+                        })
                 else:
                     await self.send_json(content={
                         'type': 'error',
-                        'message': 'No se puede cambiar la respuesta previamente enviada'
+                        'message': 'Ya no se aceptan respuestas en esta ronda'
                     })
             else:
                 await self.send_json(content={
                     'type': 'error',
-                    'message': 'Ya no se aceptan respuestas en esta ronda'
+                    'message': 'Aun no está la pregunta de la ronda'
+                })
+        else:
+            await self.send_json(content={
+                'type': 'error',
+                'message': 'El juego aun no comienza'
+            })
+
+    async def action_qualify(self, userid, grade):
+        creator, is_open, player_count = await self.get_game_params()
+
+        if not is_open:
+            round, nosy = await self.get_current_round()
+            if self.scope['user'].id == nosy.id:
+                if round.qualify_ended is None:
+                    status = await self.save_answer_evaluation(userid, grade)
+
+                    if not status:
+                        await self.send_json(content={
+                            'type': 'error',
+                            'message': 'Este usuario no ha enviado una respuesta para ser evaluada'
+                        })
+                else:
+                    await self.send_json(content={
+                        'type': 'error',
+                        'message': 'Ya no se aceptan calificaciones'
+                    })
+            else:
+                await self.send_json(content={
+                    'type': 'error',
+                    'message': 'Solo el pregunton puede calificar las respuestas'
                 })
         else:
             await self.send_json(content={
@@ -236,12 +274,56 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         return game.rounds.count(), game.current_round.nosy
 
     @database_sync_to_async
+    def answer_ended(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        round.answer_ended = datetime.datetime.now()
+        round.save()
+
+    @database_sync_to_async
+    def qualify_ended(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        round.qualify_ended = datetime.datetime.now()
+        round.save()
+
+    @database_sync_to_async
+    def save_answer_evaluation(self, userid, grade):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        status = round.add_answer_evaluation(userid, grade)
+
+        return status
+
+    @database_sync_to_async
     def get_players_without_move(self):
         from trivia_api.models import Game
 
         game = Game.objects.get(id=self.game_id)
         round = game.current_round
         return round.missing_players
+
+    @database_sync_to_async
+    def get_missing_evaluations(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        return round.missing_evaluations
+
+    @database_sync_to_async
+    def close_evaluations(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        round.close_evaluations()
 
     async def round_question_timer(self):
         game = await self.get_game_base()
@@ -263,6 +345,8 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
     async def round_answer_timer(self):
         game = await self.get_game_base()
 
+        print(f'round_answer_timer starts: {game.answer_time + self.DELTA_TIME}')
+
         await asyncio.sleep(game.answer_time + self.DELTA_TIME)
 
         await self.channel_layer.group_send(
@@ -271,19 +355,35 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             }}
         )
 
+        await self.answer_ended()
+
         missing_players = await self.get_players_without_move()
+
+        print(f'round_answer_timer missing_players: {missing_players}')
 
         for p in missing_players:
             # TODO: falta del jugador
             pass
 
-        self.qualify_timer_task = asyncio.create_task(self.round_qualify_timer())
+        await self.round_qualify_timer()
 
     async def round_qualify_timer(self):
-        # TODO: solo comenzarlo si faltan calificaciones
-        await asyncio.sleep(self.QUALIFY_TIME + self.DELTA_TIME)
+        missing_evaluations = await self.get_missing_evaluations()
 
-        game = await self.get_game_base()
-        # TODO: Revisar si quedan evaluaciones pendientes
+        if len(missing_evaluations) > 0:
+            print(f'round_qualify_timer starts: {self.QUALIFY_TIME + self.DELTA_TIME}')
+            await asyncio.sleep(self.QUALIFY_TIME + self.DELTA_TIME)
+
+            missing_evaluations = await self.get_missing_evaluations()
+            if len(missing_evaluations) > 0:
+                await self.channel_layer.group_send(
+                    self.group_name, {"type": "game_message", "message": {
+                        'type': 'qualify_timeout',
+                    }}
+                )
+                await self.close_evaluations()
+                await self.qualify_ended()
+        else:
+            await self.qualify_ended()
 
 

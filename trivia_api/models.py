@@ -92,10 +92,21 @@ class Round(models.Model):
     started = models.DateTimeField(auto_now_add=True, blank=True)
     question_arrived = models.DateTimeField(null=True, blank=True, default=None)
     answer_ended = models.DateTimeField(null=True, blank=True, default=None)
+    qualify_ended = models.DateTimeField(null=True, blank=True, default=None)
     ended = models.DateTimeField(null=True, blank=True, default=None)
 
     def __str__(self):
         return f'{self.started} [{self.game}]'
+
+    @property
+    def missing_players(self):
+        move_players = [m.player.id for m in self.moves.all()]
+
+        return [p for p in self.game.players.all() if p.id not in move_players]
+
+    @property
+    def missing_evaluations(self):
+        return [m for m in self.moves.filter(evaluation__isnull=True).exclude(player=self.nosy).all()]
 
     def add_answer(self, player, answer):
         if self.moves.filter(player=player).count() == 0:
@@ -106,11 +117,19 @@ class Round(models.Model):
         else:
             return None
 
-    @property
-    def missing_players(self):
-        move_players = [m.player.id for m in self.moves]
+    def add_answer_evaluation(self, player, grade):
+        move = self.moves.filter(player=player).first()
+        if move is not None:
+            move.evaluation = grade
+            move.evaluated = datetime.datetime.now()
+            move.save()
+            return True
 
-        return [p for p in self.game.players.all() if p.id not in move_players]
+        return False
+
+    def close_evaluations(self):
+        for m in self.missing_evaluations:
+            m.auto_grade()
 
 
 class Move(models.Model):
@@ -118,11 +137,20 @@ class Move(models.Model):
     player = models.ForeignKey(User, on_delete=models.CASCADE)
     answer = models.TextField(null=True, blank=True, default=None)
     evaluation = models.IntegerField(null=True, blank=True, default=None)
+    auto_evaluation = models.BooleanField(default=False)
 
     created = models.DateTimeField(auto_now_add=True, blank=True)
+    evaluated = models.DateTimeField(null=True, blank=True, default=None)
 
     def __str__(self):
         return f'{self.player} [{self.round}]'
+
+    def auto_grade(self):
+        self.evaluation = 2
+        self.auto_evaluation = True
+        self.evaluated = datetime.datetime.now()
+
+        self.save()
 
 
 class Qualification(models.Model):
