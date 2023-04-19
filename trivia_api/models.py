@@ -52,6 +52,11 @@ class Game(models.Model):
         else:
             return None
 
+    @property
+    def active_players(self):
+        # TODO: jugadores no descalificados
+        return self.players
+
     def next_round(self):
         if self.remaining_rounds > 0:
             Round.objects.create(game=self,
@@ -108,6 +113,15 @@ class Round(models.Model):
     def missing_evaluations(self):
         return [m for m in self.moves.filter(evaluation__isnull=True).exclude(player=self.nosy).all()]
 
+    @property
+    def correct_answer(self):
+        nosy_move = self.moves.filter(player=self.nosy).first()
+        return nosy_move.answer if nosy_move is not None else None
+
+    @property
+    def qualifications(self):
+        return Qualification.objects.filter(move__round=self).all()
+
     def add_answer(self, player, answer):
         if self.moves.filter(player=player).count() == 0:
             move = Move.objects.create(round=self,
@@ -130,6 +144,21 @@ class Round(models.Model):
     def close_evaluations(self):
         for m in self.missing_evaluations:
             m.auto_grade()
+
+    def create_qualifications(self):
+        if self.qualifications.count() == 0:
+            valid_moves = list(self.moves.exclude(player=self.nosy).order_by('created'))
+            next_move = 0
+            for p in self.game.active_players.exclude(id=self.nosy.id).all():
+                if valid_moves[next_move].player.id == p.id:
+                    valid_moves[next_move], valid_moves[(next_move+1) % len(valid_moves)] = valid_moves[(next_move+1) % len(valid_moves)], valid_moves[next_move]
+                p_move = valid_moves[next_move]
+                Qualification.objects.create(player=p,
+                                             move=p_move)
+                next_move = (next_move+1) % len(valid_moves)
+
+    def get_qualification(self, playerid):
+        return Qualification.objects.filter(player__id=playerid, move__round=self).first()
 
 
 class Move(models.Model):
@@ -159,7 +188,7 @@ class Qualification(models.Model):
     is_correct = models.BooleanField(null=True, blank=True, default=None)
 
     created = models.DateTimeField(auto_now_add=True, blank=True)
-    sent = models.DateTimeField(null=True, blank=True, default=None)
+    qualified = models.DateTimeField(null=True, blank=True, default=None)
 
     def __str__(self):
         return f'{self.player} [{self.move}] -- {self.is_correct}'

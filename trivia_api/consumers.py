@@ -9,6 +9,7 @@ import datetime
 class TriviaConsumer(AsyncJsonWebsocketConsumer):
     DELTA_TIME = 2
     QUALIFY_TIME = 90
+    ASSESS_TIME = 30
 
     async def connect(self):
         self.game_id = self.scope["url_route"]["kwargs"]["game_id"]
@@ -34,6 +35,8 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             await self.action_answer(content['text'])
         elif content['action'] == 'qualify':
             await self.action_qualify(int(content['userid']), int(content['grade']))
+        elif content['action'] == 'assess':
+            await self.action_assess(bool(content['correctness']))
 
     async def game_message(self, event):
         message = event["message"]
@@ -165,6 +168,11 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                             'type': 'error',
                             'message': 'Este usuario no ha enviado una respuesta para ser evaluada'
                         })
+                    else:
+                        qualify_ready = await self.check_qualify_status()
+                        if qualify_ready:
+                            qs_data = await self.qualify_ended()
+                            await self.send_qualifications(qs_data)
                 else:
                     await self.send_json(content={
                         'type': 'error',
@@ -181,6 +189,30 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                 'message': 'El juego aun no comienza'
             })
 
+    async def action_assess(self, is_correct):
+        creator, is_open, player_count = await self.get_game_params()
+
+        if not is_open:
+            round, nosy = await self.get_current_round()
+            if round.qualify_ended is not None and round.ended is None:
+                status = await self.save_assess(self.scope['user'].id, is_correct)
+
+                if not status:
+                    await self.send_json(content={
+                        'type': 'error',
+                        'message': 'No hay una evaluación activa para este usuario'
+                    })
+            else:
+                await self.send_json(content={
+                    'type': 'error',
+                    'message': 'Ya no se aceptan evaluaciones en esta ronda'
+                })
+        else:
+            await self.send_json(content={
+                'type': 'error',
+                'message': 'El juego aun no comienza'
+            })
+
     async def start_round_message(self, round_number, nosy_id):
         await self.channel_layer.group_send(
             self.group_name, {"type": "game_message", "message": {
@@ -190,6 +222,19 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             }}
         )
         self.question_timer_task = asyncio.create_task(self.round_question_timer())
+
+    async def send_qualifications(self, qualifications_data):
+        for q in qualifications_data:
+            await self.channel_layer.group_send(
+                self.group_name, {"type": "game_message", 'userid': q['userid'], "message": {
+                    'type': 'round_review_answer',
+                    'correct_answer': q['correct_answer'],
+                    'graded_answer': q['graded_answer'],
+                    'grade': q['grade'],
+                }}
+            )
+
+        self.assess_timer_task = asyncio.create_task(self.round_assess_timer())
 
     @database_sync_to_async
     def verify_player(self):
@@ -291,6 +336,19 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         round.qualify_ended = datetime.datetime.now()
         round.save()
 
+        round.create_qualifications()
+
+        return [{'userid': q.player.id, 'correct_answer': round.correct_answer, 'graded_answer': q.move.answer, 'grade': q.move.evaluation} for q in round.qualifications.all()]
+
+    @database_sync_to_async
+    def asses_ended(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        round.ended = datetime.datetime.now()
+        round.save()
+
     @database_sync_to_async
     def save_answer_evaluation(self, userid, grade):
         from trivia_api.models import Game
@@ -318,12 +376,39 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         return round.missing_evaluations
 
     @database_sync_to_async
+    def check_qualify_status(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+
+        if round.answer_ended is not None and len(round.missing_players) == 0 and len(round.missing_evaluations) == 0:
+            return True
+        return False
+
+    @database_sync_to_async
     def close_evaluations(self):
         from trivia_api.models import Game
 
         game = Game.objects.get(id=self.game_id)
         round = game.current_round
         round.close_evaluations()
+
+    @database_sync_to_async
+    def save_assess(self, userid, is_correct):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        round = game.current_round
+        qualification = round.get_qualification(userid)
+
+        if qualification is not None:
+            qualification.is_correct = is_correct
+            qualification.qualified = datetime.datetime.now()
+            qualification.save()
+            return True
+        else:
+            return False
 
     async def round_question_timer(self):
         game = await self.get_game_base()
@@ -359,8 +444,6 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
         missing_players = await self.get_players_without_move()
 
-        print(f'round_answer_timer missing_players: {missing_players}')
-
         for p in missing_players:
             # TODO: falta del jugador
             pass
@@ -369,6 +452,8 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
     async def round_qualify_timer(self):
         missing_evaluations = await self.get_missing_evaluations()
+
+        print(f'round_qualify_timer missing_evaluations: {len(missing_evaluations)}')
 
         if len(missing_evaluations) > 0:
             print(f'round_qualify_timer starts: {self.QUALIFY_TIME + self.DELTA_TIME}')
@@ -382,8 +467,27 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                     }}
                 )
                 await self.close_evaluations()
-                await self.qualify_ended()
+                qs_data = await self.qualify_ended()
+                await self.send_qualifications(qs_data)
         else:
-            await self.qualify_ended()
+            try:
+                qs_data = await self.qualify_ended()
+                await self.send_qualifications(qs_data)
+            except Exception as e:
+                print(e)
+                raise e
 
+    async def round_assess_timer(self):
+        await asyncio.sleep(self.ASSESS_TIME + self.DELTA_TIME)
+
+        await self.channel_layer.group_send(
+            self.group_name, {"type": "game_message", "message": {
+                'type': 'assess_timeout',
+            }}
+        )
+
+        await self.asses_ended()
+
+        # TODO: Falta de los que no evaluaron
+        # TODO: ir a finalizar la ronda
 

@@ -11,7 +11,7 @@ class GameAdmin(admin.ModelAdmin):
 
 @admin.register(Round)
 class RoundAdmin(admin.ModelAdmin):
-    list_display = ('game', 'started', 'nosy', 'question', 'missing_players_count', 'missing_evaluations_count')
+    list_display = ('game', 'started', 'nosy', 'question', 'missing_players_count', 'missing_evaluations_count', 'ended')
     list_filter = ('game', 'nosy')
 
     @admin.display(description="missing_players")
@@ -31,8 +31,12 @@ class MoveAdmin(admin.ModelAdmin):
 
 @admin.register(Qualification)
 class QualificationAdmin(admin.ModelAdmin):
-    list_display = ('move', 'player', 'sent')
+    list_display = ('move', 'player', 'move_player', 'qualified', 'is_correct')
     list_filter = ('is_correct',)
+
+    @admin.display(description="move_player")
+    def move_player(self, obj):
+        return obj.move.player
 
 
 @admin.register(Fault)
