@@ -382,7 +382,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         game = Game.objects.get(id=self.game_id)
         round = game.current_round
 
-        if round.answer_ended is not None and len(round.missing_players) == 0 and len(round.missing_evaluations) == 0:
+        if round.answer_ended is not None and len(round.missing_evaluations) == 0:
             return True
         return False
 
