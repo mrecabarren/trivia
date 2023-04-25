@@ -46,6 +46,10 @@ class Game(models.Model):
         return self.rounds_number - self.rounds.count() if self.rounds_number is not None else None
 
     @property
+    def current_round_idx(self):
+        return self.rounds.count()
+
+    @property
     def current_round(self):
         if self.rounds.count() > 0:
             return self.rounds.latest('started')
@@ -87,6 +91,18 @@ class Game(models.Model):
         else:
             return self.creator
 
+    def player_score(self, p_id):
+        answering = Move.objects.filter(
+            round__game=self, player=p_id, evaluation__isnull=False
+        ).aggregate(models.Sum('evaluation'))
+        answering_score = answering['evaluation__sum'] if answering['evaluation__sum'] is not None else 0
+        asking = sum([r.nosy_score if r.nosy_score is not None else 0 for r in self.rounds.filter(nosy=p_id).all()])
+
+        return answering_score + asking
+
+    def player_faults(self, p_id):
+        return Fault.objects.filter(round__game=self, player=p_id).count()
+
 
 class Round(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='rounds')
@@ -121,6 +137,33 @@ class Round(models.Model):
     @property
     def qualifications(self):
         return Qualification.objects.filter(move__round=self).all()
+
+    @property
+    def current_phase(self):
+        if not self.question_arrived:
+            return 'question'
+        elif not self.answer_ended:
+            return 'answering'
+        elif not self.qualify_ended:
+            return 'qualifying'
+        elif not self.ended:
+            return 'evaluating'
+        else:
+            return 'ended'
+
+    @property
+    def nosy_score(self):
+        if self.ended:
+            negative = Qualification.objects.filter(move__round=self, is_correct=False).count()
+            players = self.game.active_players.count()-1
+
+            if (players-negative)/players >= 0.8:
+                return 3
+            elif (players-negative)/players >= 0.5:
+                return 1
+            return -2
+        else:
+            return None
 
     def add_answer(self, player, answer):
         if self.moves.filter(player=player).count() == 0:

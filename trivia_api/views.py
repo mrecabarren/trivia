@@ -109,6 +109,42 @@ class GameViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_423_LOCKED
             )
 
+    @action(
+        detail=True,
+        methods=['post'],
+        queryset=Game.objects.all(),
+    )
+    def state(self, request, pk=None):
+        game = self.get_object()
+        c_round = game.current_round
+
+        if not game.is_open:
+            game_state = {
+                'rounds': game.rounds_number,
+                'current_round': game.current_round_idx,
+                'round': {
+                    'nosy': c_round.nosy.id,
+                    'question': c_round.question,
+                    'phase': c_round.current_phase,
+                } if c_round is not None else None,
+                'players': [
+                    {'id': p.id, 'score': game.player_score(p.id), 'faults': game.player_faults(p.id)}
+                    for p in game.players.all()
+                ],
+            }
+            return Response(
+                data=game_state,
+                status=status.HTTP_200_OK
+            )
+        else:
+            return Response(
+                data={
+                    "message": "El juego aun no ha comenzado.",
+                    "game_id": game.id,
+                },
+                status=status.HTTP_423_LOCKED
+            )
+
     def perform_create(self, serializer):
         instance = serializer.save(creator=self.request.user)
         instance.players.add(self.request.user)
