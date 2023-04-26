@@ -103,6 +103,9 @@ class Game(models.Model):
     def player_faults(self, p_id):
         return Fault.objects.filter(round__game=self, player=p_id).count()
 
+    def get_scores(self):
+        return {p.id: self.player_score(p.id) for p in self.players.all()}
+
 
 class Round(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='rounds')
@@ -140,13 +143,13 @@ class Round(models.Model):
 
     @property
     def current_phase(self):
-        if not self.question_arrived:
+        if self.question_arrived is None:
             return 'question'
-        elif not self.answer_ended:
+        elif self.answer_ended is None:
             return 'answering'
-        elif not self.qualify_ended:
+        elif self.qualify_ended is None:
             return 'qualifying'
-        elif not self.ended:
+        elif self.ended is None:
             return 'evaluating'
         else:
             return 'ended'
@@ -202,6 +205,17 @@ class Round(models.Model):
 
     def get_qualification(self, playerid):
         return Qualification.objects.filter(player__id=playerid, move__round=self).first()
+
+    def get_results(self):
+        if self.ended is not None:
+            results = {p.id: 0 if p.id != self.nosy.id else self.nosy_score for p in self.game.active_players.all()}
+
+            for m in self.moves.filter(evaluation__isnull=False).all():
+                results[m.player.id] = m.evaluation
+
+            return results
+        else:
+            return None
 
 
 class Move(models.Model):

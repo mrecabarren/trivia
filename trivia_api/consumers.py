@@ -8,6 +8,7 @@ import datetime
 
 class TriviaConsumer(AsyncJsonWebsocketConsumer):
     DELTA_TIME = 2
+    START_TIME = 5
     QUALIFY_TIME = 90
     ASSESS_TIME = 30
 
@@ -60,8 +61,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                             }}
                         )
 
-                        round_number, nosy_id = await self.next_round()
-                        await self.start_round_message(round_number, nosy_id)
+                        self.start_timer_task = asyncio.create_task(self.game_start_time())
                     else:
                         await self.send_json(content={
                             'type': 'error',
@@ -236,6 +236,18 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
         self.assess_timer_task = asyncio.create_task(self.round_assess_timer())
 
+    async def finish_round(self):
+        round_result, game_scores = await self.get_round_results()
+        await self.channel_layer.group_send(
+            self.group_name, {"type": "game_message", "message": {
+                'type': 'round_result',
+                'round_results': round_result,
+                'game_scores': game_scores,
+            }}
+        )
+
+        # TODO: comenzar siguiente ronda
+
     @database_sync_to_async
     def verify_player(self):
         if self.scope['user'].is_anonymous:
@@ -345,9 +357,9 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         from trivia_api.models import Game
 
         game = Game.objects.get(id=self.game_id)
-        round = game.current_round
-        round.ended = datetime.datetime.now()
-        round.save()
+        c_round = game.current_round
+        c_round.ended = datetime.datetime.now()
+        c_round.save()
 
     @database_sync_to_async
     def save_answer_evaluation(self, userid, grade):
@@ -409,6 +421,23 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             return True
         else:
             return False
+
+    @database_sync_to_async
+    def get_round_results(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        c_round = game.current_round
+        round_result = c_round.get_results()
+        game_scores = game.get_scores()
+
+        return round_result, game_scores
+
+    async def game_start_time(self):
+        await asyncio.sleep(self.START_TIME)
+
+        round_number, nosy_id = await self.next_round()
+        await self.start_round_message(round_number, nosy_id)
 
     async def round_question_timer(self):
         game = await self.get_game_base()
@@ -489,5 +518,6 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         await self.asses_ended()
 
         # TODO: Falta de los que no evaluaron
-        # TODO: ir a finalizar la ronda
+
+        await self.finish_round()
 
