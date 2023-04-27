@@ -11,7 +11,7 @@ class GameAdmin(admin.ModelAdmin):
 
 @admin.register(Round)
 class RoundAdmin(admin.ModelAdmin):
-    list_display = ('game', 'started', 'nosy', 'question', 'missing_players_count', 'missing_evaluations_count', 'ended')
+    list_display = ('game', 'started', 'nosy', 'nosy_score', 'question', 'missing_players_count', 'missing_evaluations_count', 'ended')
     list_filter = ('game', 'nosy')
 
     @admin.display(description="missing_players")

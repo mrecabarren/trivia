@@ -37,7 +37,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         elif content['action'] == 'qualify':
             await self.action_qualify(int(content['userid']), int(content['grade']))
         elif content['action'] == 'assess':
-            await self.action_assess(bool(content['correctness']))
+            await self.action_assess(content['correctness'] == 'true')
 
     async def game_message(self, event):
         message = event["message"]
@@ -246,7 +246,16 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             }}
         )
 
-        # TODO: comenzar siguiente ronda
+        round_number, nosy_id = await self.next_round()
+        if round_number is not None:
+            await self.start_round_message(round_number, nosy_id)
+        else:
+            await self.channel_layer.group_send(
+                self.group_name, {"type": "game_message", "message": {
+                    'type': 'game_result',
+                    'game_scores': game_scores,
+                }}
+            )
 
     @database_sync_to_async
     def verify_player(self):
@@ -288,7 +297,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         if game.next_round():
             return game.rounds.count(), game.current_round.nosy.id
         else:
-            return False
+            return None, None
 
     @database_sync_to_async
     def get_current_round(self):

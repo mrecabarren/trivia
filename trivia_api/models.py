@@ -82,14 +82,18 @@ class Game(models.Model):
 
     def next_nosy(self):
         # random without repeat
-        if self.rounds.count() <= self.players_count:
+        if self.rounds.count() < self.players_count:
             p_ready = [r.nosy.id for r in self.rounds.all() if r.nosy is not None]
             p_available = [p for p in self.players.all() if p.id not in p_ready]
 
             return random.choice(p_available)
-        # TODO: worse score, but not repeat
         else:
-            return self.creator
+            scores = [{'player': p, 'score': self.player_score(p.id)} for p in self.players.all()]
+            scores.sort(key=lambda p: p['score'])
+
+            last_nosy = self.current_round.nosy
+
+            return scores[0]['player'] if last_nosy is None or scores[0]['player'].id != last_nosy.id else scores[1]['player']
 
     def player_score(self, p_id):
         answering = Move.objects.filter(

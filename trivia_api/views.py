@@ -123,7 +123,7 @@ class GameViewSet(viewsets.ModelViewSet):
                 'rounds': game.rounds_number,
                 'current_round': game.current_round_idx,
                 'round': {
-                    'nosy': c_round.nosy.id,
+                    'nosy': c_round.nosy.id if c_round.nosy is not None else None,
                     'question': c_round.question,
                     'phase': c_round.current_phase,
                 } if c_round is not None else None,
