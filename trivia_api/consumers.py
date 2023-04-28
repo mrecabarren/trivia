@@ -257,6 +257,15 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                 }}
             )
 
+    async def send_fault(self, player_id, category):
+        await self.channel_layer.group_send(
+            self.group_name, {"type": "game_message", "message": {
+                'type': 'user_fault',
+                'player_id': player_id,
+                'category': category,
+            }}
+        )
+
     @database_sync_to_async
     def verify_player(self):
         if self.scope['user'].is_anonymous:
@@ -397,6 +406,14 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         return round.missing_evaluations
 
     @database_sync_to_async
+    def get_missing_qualifications(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        c_round = game.current_round
+        return c_round.missing_qualifications_players
+
+    @database_sync_to_async
     def check_qualify_status(self):
         from trivia_api.models import Game
 
@@ -442,6 +459,32 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
         return round_result, game_scores
 
+    @database_sync_to_async
+    def create_nosy_fault(self, category):
+        from trivia_api.models import Game
+
+        print(f'create_nosy_fault: {category}')
+
+        game = Game.objects.get(id=self.game_id)
+        c_round = game.current_round
+        fault = c_round.create_fault(c_round.nosy.id, category)
+        return fault.player.id, fault.category
+
+    @database_sync_to_async
+    def create_fault(self, player_id, category):
+        from trivia_api.models import Game
+
+        print(f'create_fault: {player_id} - {category}')
+
+        try:
+            game = Game.objects.get(id=self.game_id)
+            c_round = game.current_round
+            fault = c_round.create_fault(player_id, category)
+        except Exception as e:
+            print(e)
+
+        return fault.player.id, fault.category
+
     async def game_start_time(self):
         await asyncio.sleep(self.START_TIME)
 
@@ -455,12 +498,14 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         c_round, nosy = await self.get_current_round()
 
         if c_round.question is None:
-            # TODO: falta del nosy
             await self.channel_layer.group_send(
                 self.group_name, {"type": "game_message", "message": {
                     'type': 'question_time_ended',
                 }}
             )
+            player_id, category = await self.create_nosy_fault('QT')
+            await self.send_fault(player_id, category)
+
             round_number, nosy = await self.restart_round()
 
             await self.start_round_message(round_number, nosy.id)
@@ -483,8 +528,8 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         missing_players = await self.get_players_without_move()
 
         for p in missing_players:
-            # TODO: falta del jugador
-            pass
+            player_id, category = await self.create_fault(p.id, 'AT')
+            await self.send_fault(player_id, category)
 
         await self.round_qualify_timer()
 
@@ -505,6 +550,10 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                     }}
                 )
                 await self.close_evaluations()
+
+                player_id, category = await self.create_nosy_fault('ET')
+                await self.send_fault(player_id, category)
+
                 qs_data = await self.qualify_ended()
                 await self.send_qualifications(qs_data)
         else:
@@ -526,7 +575,11 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
         await self.asses_ended()
 
-        # TODO: Falta de los que no evaluaron
+        missing_players = await self.get_missing_qualifications()
+
+        for p in missing_players:
+            player_id, category = await self.create_fault(p.id, 'FT')
+            await self.send_fault(player_id, category)
 
         await self.finish_round()
 

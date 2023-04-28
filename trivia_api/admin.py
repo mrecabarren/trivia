@@ -5,13 +5,15 @@ from trivia_api.models import Game, Round, Move, Qualification, Fault
 
 @admin.register(Game)
 class GameAdmin(admin.ModelAdmin):
-    list_display = ('name', 'created', 'creator', 'players_count', 'is_open', 'started', 'rounds_number', 'remaining_rounds')
+    list_display = ('name', 'created', 'creator', 'players_count', 'is_open', 'started',
+                    'rounds_number', 'remaining_rounds')
     list_filter = ('creator', 'started', 'ended')
 
 
 @admin.register(Round)
 class RoundAdmin(admin.ModelAdmin):
-    list_display = ('game', 'started', 'nosy', 'nosy_score', 'question', 'missing_players_count', 'missing_evaluations_count', 'ended')
+    list_display = ('game', 'started', 'nosy', 'nosy_score', 'question', 'missing_players_count',
+                    'missing_evaluations_count', 'ended')
     list_filter = ('game', 'nosy')
 
     @admin.display(description="missing_players")
@@ -41,5 +43,9 @@ class QualificationAdmin(admin.ModelAdmin):
 
 @admin.register(Fault)
 class FaultAdmin(admin.ModelAdmin):
-    list_display = ('round', 'player', 'category')
-    list_filter = ('player', 'category')
+    list_display = ('game', 'round', 'player', 'category', 'fault_value')
+    list_filter = ('player', 'category', 'round__game')
+
+    @admin.display(description="game")
+    def game(self, obj):
+        return obj.round.game

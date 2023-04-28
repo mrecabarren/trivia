@@ -105,7 +105,8 @@ class Game(models.Model):
         return answering_score + asking
 
     def player_faults(self, p_id):
-        return Fault.objects.filter(round__game=self, player=p_id).count()
+        fault_count = Fault.objects.filter(round__game=self, player=p_id).aggregate(models.Sum('fault_value'))
+        return fault_count['fault_value__sum'] if fault_count['fault_value__sum'] is not None else 0
 
     def get_scores(self):
         return {p.id: self.player_score(p.id) for p in self.players.all()}
@@ -135,6 +136,10 @@ class Round(models.Model):
     @property
     def missing_evaluations(self):
         return [m for m in self.moves.filter(evaluation__isnull=True).exclude(player=self.nosy).all()]
+
+    @property
+    def missing_qualifications_players(self):
+        return [q.player for q in self.qualifications.filter(qualified__isnull=True).all()]
 
     @property
     def correct_answer(self):
@@ -207,6 +212,15 @@ class Round(models.Model):
                                              move=p_move)
                 next_move = (next_move+1) % len(valid_moves)
 
+    def create_fault(self, player_id, category):
+        fault_value = 1 if category != 'QT' else 2
+
+        fault = Fault.objects.create(round=self,
+                                     player=User.objects.get(id=player_id),
+                                     category=category,
+                                     fault_value=fault_value)
+        return fault
+
     def get_qualification(self, playerid):
         return Qualification.objects.filter(player__id=playerid, move__round=self).first()
 
@@ -260,14 +274,14 @@ class Fault(models.Model):
         ('QT', 'QUESTION TIME'),
         ('AT', 'ANSWER TIME'),
         ('ET', 'EVALUATION TIME'),
-        ('QT', 'QUALIFICATION TIME'),
+        ('FT', 'QUALIFICATION TIME'),
         ('FF', 'FOCUS'),
     ]
 
     player = models.ForeignKey(User, on_delete=models.CASCADE, related_name='faults')
     round = models.ForeignKey(Round, on_delete=models.CASCADE, related_name='faults')
     category = models.CharField(max_length=2, choices=FAULT_CATEGORIES)
-    description = models.TextField()
+    fault_value = models.IntegerField(default=1)
 
     def __str__(self):
         return f'{self.player} [{self.round}]'
