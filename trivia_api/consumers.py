@@ -246,18 +246,21 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             }}
         )
 
-        round_number, nosy_id = await self.next_round()
-        if round_number is not None:
-            await self.start_round_message(round_number, nosy_id)
+        if await self.check_active_players():
+            round_number, nosy_id = await self.next_round()
+            if round_number is not None:
+                await self.start_round_message(round_number, nosy_id)
+            else:
+                await self.channel_layer.group_send(
+                    self.group_name, {"type": "game_message", "message": {
+                        'type': 'game_result',
+                        'game_scores': game_scores,
+                    }}
+                )
         else:
-            await self.channel_layer.group_send(
-                self.group_name, {"type": "game_message", "message": {
-                    'type': 'game_result',
-                    'game_scores': game_scores,
-                }}
-            )
+            await self.send_canceled_message()
 
-    async def send_fault(self, player_id, category):
+    async def send_fault(self, player_id, category, is_disqualified):
         await self.channel_layer.group_send(
             self.group_name, {"type": "game_message", "message": {
                 'type': 'user_fault',
@@ -265,6 +268,31 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                 'category': category,
             }}
         )
+
+        if is_disqualified:
+            await self.channel_layer.group_send(
+                self.group_name, {"type": "game_message", "message": {
+                    'type': 'user_disqualified',
+                    'player_id': player_id,
+                }}
+            )
+
+    async def send_canceled_message(self):
+        round_result, game_scores = await self.get_round_results()
+        await self.channel_layer.group_send(
+            self.group_name, {"type": "game_message", "message": {
+                'type': 'game_canceled',
+                'message': 'El juego se cancela porque quedan menos de 3 jugadores activos',
+                'game_scores': game_scores,
+            }}
+        )
+
+    @database_sync_to_async
+    def check_active_players(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        return len(game.active_players) >= 3
 
     @database_sync_to_async
     def verify_player(self):
@@ -463,27 +491,25 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
     def create_nosy_fault(self, category):
         from trivia_api.models import Game
 
-        print(f'create_nosy_fault: {category}')
-
         game = Game.objects.get(id=self.game_id)
         c_round = game.current_round
         fault = c_round.create_fault(c_round.nosy.id, category)
-        return fault.player.id, fault.category
+        is_disqualified = game.is_disqualified(c_round.nosy.id)
+        return fault.player.id, fault.category, is_disqualified
 
     @database_sync_to_async
     def create_fault(self, player_id, category):
         from trivia_api.models import Game
 
-        print(f'create_fault: {player_id} - {category}')
-
         try:
             game = Game.objects.get(id=self.game_id)
             c_round = game.current_round
             fault = c_round.create_fault(player_id, category)
+            is_disqualified = game.is_disqualified(player_id)
         except Exception as e:
             print(e)
 
-        return fault.player.id, fault.category
+        return fault.player.id, fault.category, is_disqualified
 
     async def game_start_time(self):
         await asyncio.sleep(self.START_TIME)
@@ -503,17 +529,17 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                     'type': 'question_time_ended',
                 }}
             )
-            player_id, category = await self.create_nosy_fault('QT')
-            await self.send_fault(player_id, category)
+            player_id, category, is_disqualified = await self.create_nosy_fault('QT')
+            await self.send_fault(player_id, category, is_disqualified)
 
-            round_number, nosy = await self.restart_round()
-
-            await self.start_round_message(round_number, nosy.id)
+            if await self.check_active_players():
+                round_number, nosy = await self.restart_round()
+                await self.start_round_message(round_number, nosy.id)
+            else:
+                await self.send_canceled_message()
 
     async def round_answer_timer(self):
         game = await self.get_game_base()
-
-        print(f'round_answer_timer starts: {game.answer_time + self.DELTA_TIME}')
 
         await asyncio.sleep(game.answer_time + self.DELTA_TIME)
 
@@ -528,15 +554,13 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         missing_players = await self.get_players_without_move()
 
         for p in missing_players:
-            player_id, category = await self.create_fault(p.id, 'AT')
-            await self.send_fault(player_id, category)
+            player_id, category, is_disqualified = await self.create_fault(p.id, 'AT')
+            await self.send_fault(player_id, category, is_disqualified)
 
         await self.round_qualify_timer()
 
     async def round_qualify_timer(self):
         missing_evaluations = await self.get_missing_evaluations()
-
-        print(f'round_qualify_timer missing_evaluations: {len(missing_evaluations)}')
 
         if len(missing_evaluations) > 0:
             print(f'round_qualify_timer starts: {self.QUALIFY_TIME + self.DELTA_TIME}')
@@ -551,8 +575,8 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                 )
                 await self.close_evaluations()
 
-                player_id, category = await self.create_nosy_fault('ET')
-                await self.send_fault(player_id, category)
+                player_id, category, is_disqualified = await self.create_nosy_fault('ET')
+                await self.send_fault(player_id, category, is_disqualified)
 
                 qs_data = await self.qualify_ended()
                 await self.send_qualifications(qs_data)
@@ -578,8 +602,8 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         missing_players = await self.get_missing_qualifications()
 
         for p in missing_players:
-            player_id, category = await self.create_fault(p.id, 'FT')
-            await self.send_fault(player_id, category)
+            player_id, category, is_disqualified = await self.create_fault(p.id, 'FT')
+            await self.send_fault(player_id, category, is_disqualified)
 
         await self.finish_round()
 

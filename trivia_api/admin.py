@@ -6,13 +6,17 @@ from trivia_api.models import Game, Round, Move, Qualification, Fault
 @admin.register(Game)
 class GameAdmin(admin.ModelAdmin):
     list_display = ('name', 'created', 'creator', 'players_count', 'is_open', 'started',
-                    'rounds_number', 'remaining_rounds')
+                    'rounds_number', 'remaining_rounds', 'disqualified_players_count')
     list_filter = ('creator', 'started', 'ended')
+
+    @admin.display(description="disqualified_players")
+    def disqualified_players_count(self, obj):
+        return len(obj.disqualified_players)
 
 
 @admin.register(Round)
 class RoundAdmin(admin.ModelAdmin):
-    list_display = ('game', 'started', 'nosy', 'nosy_score', 'question', 'missing_players_count',
+    list_display = ('game', 'index', 'started', 'nosy', 'nosy_score', 'question', 'missing_players_count',
                     'missing_evaluations_count', 'ended')
     list_filter = ('game', 'nosy')
 
@@ -27,25 +31,45 @@ class RoundAdmin(admin.ModelAdmin):
 
 @admin.register(Move)
 class MoveAdmin(admin.ModelAdmin):
-    list_display = ('round', 'created', 'player', 'evaluation', 'auto_evaluation')
+    list_display = ('game', 'round_index', 'player', 'created', 'evaluation', 'auto_evaluation')
     list_filter = ('evaluation', 'auto_evaluation')
+
+    @admin.display(description="game")
+    def game(self, obj):
+        return obj.round.game
+
+    @admin.display(description="round_index")
+    def round_index(self, obj):
+        return obj.round.index
 
 
 @admin.register(Qualification)
 class QualificationAdmin(admin.ModelAdmin):
-    list_display = ('move', 'player', 'move_player', 'qualified', 'is_correct')
-    list_filter = ('is_correct',)
+    list_display = ('game', 'round_index', 'player', 'move_player', 'qualified', 'is_correct')
+    list_filter = ('move__round__game', 'is_correct', 'player')
 
     @admin.display(description="move_player")
     def move_player(self, obj):
         return obj.move.player
 
+    @admin.display(description="game")
+    def game(self, obj):
+        return obj.move.round.game
+
+    @admin.display(description="round_index")
+    def round_index(self, obj):
+        return obj.move.round.index
+
 
 @admin.register(Fault)
 class FaultAdmin(admin.ModelAdmin):
-    list_display = ('game', 'round', 'player', 'category', 'fault_value')
+    list_display = ('game', 'round_index', 'player', 'category', 'fault_value')
     list_filter = ('player', 'category', 'round__game')
 
     @admin.display(description="game")
     def game(self, obj):
         return obj.round.game
+
+    @admin.display(description="round_index")
+    def round_index(self, obj):
+        return obj.round.index

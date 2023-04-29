@@ -58,8 +58,11 @@ class Game(models.Model):
 
     @property
     def active_players(self):
-        # TODO: jugadores no descalificados
-        return self.players
+        return [p for p in self.players.all() if self.player_faults(p.id) < 3]
+
+    @property
+    def disqualified_players(self):
+        return [p for p in self.players.all() if self.player_faults(p.id) >= 3]
 
     def next_round(self):
         if self.remaining_rounds > 0:
@@ -82,13 +85,13 @@ class Game(models.Model):
 
     def next_nosy(self):
         # random without repeat
-        if self.rounds.count() < self.players_count:
-            p_ready = [r.nosy.id for r in self.rounds.all() if r.nosy is not None]
-            p_available = [p for p in self.players.all() if p.id not in p_ready]
+        p_ready = [r.nosy.id for r in self.rounds.all() if r.nosy is not None]
+        p_available = [p for p in self.active_players if p.id not in p_ready]
 
+        if len(p_available) > 0:
             return random.choice(p_available)
         else:
-            scores = [{'player': p, 'score': self.player_score(p.id)} for p in self.players.all()]
+            scores = [{'player': p, 'score': self.player_score(p.id)} for p in self.active_players]
             scores.sort(key=lambda p: p['score'])
 
             last_nosy = self.current_round.nosy
@@ -111,6 +114,12 @@ class Game(models.Model):
     def get_scores(self):
         return {p.id: self.player_score(p.id) for p in self.players.all()}
 
+    def is_disqualified(self, player_id):
+        return self.player_faults(player_id) >= 3
+
+    def round_index(self, the_round):
+        return self.rounds.filter(started__lte=the_round.started).count()
+
 
 class Round(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, related_name='rounds')
@@ -128,10 +137,18 @@ class Round(models.Model):
         return f'{self.started} [{self.game}]'
 
     @property
+    def index(self):
+        return self.game.round_index(self)
+
+    @property
+    def players_without_nosy(self):
+        return [p for p in self.game.active_players if p.id != self.nosy.id]
+
+    @property
     def missing_players(self):
         move_players = [m.player.id for m in self.moves.all()]
 
-        return [p for p in self.game.players.all() if p.id not in move_players]
+        return [p for p in self.game.active_players if p.id not in move_players]
 
     @property
     def missing_evaluations(self):
@@ -167,11 +184,11 @@ class Round(models.Model):
     def nosy_score(self):
         if self.ended:
             negative = Qualification.objects.filter(move__round=self, is_correct=False).count()
-            players = self.game.active_players.count()-1
+            qualifications = Qualification.objects.filter(move__round=self).count()
 
-            if (players-negative)/players >= 0.8:
+            if (qualifications-negative)/qualifications >= 0.8:
                 return 3
-            elif (players-negative)/players >= 0.5:
+            elif (qualifications-negative)/qualifications >= 0.5:
                 return 1
             return -2
         else:
@@ -204,7 +221,7 @@ class Round(models.Model):
         if self.qualifications.count() == 0:
             valid_moves = list(self.moves.exclude(player=self.nosy).order_by('created'))
             next_move = 0
-            for p in self.game.active_players.exclude(id=self.nosy.id).all():
+            for p in self.players_without_nosy:
                 if valid_moves[next_move].player.id == p.id:
                     valid_moves[next_move], valid_moves[(next_move+1) % len(valid_moves)] = valid_moves[(next_move+1) % len(valid_moves)], valid_moves[next_move]
                 p_move = valid_moves[next_move]
@@ -226,7 +243,7 @@ class Round(models.Model):
 
     def get_results(self):
         if self.ended is not None:
-            results = {p.id: 0 if p.id != self.nosy.id else self.nosy_score for p in self.game.active_players.all()}
+            results = {p.id: 0 if p.id != self.nosy.id else self.nosy_score for p in self.game.active_players}
 
             for m in self.moves.filter(evaluation__isnull=False).all():
                 results[m.player.id] = m.evaluation
