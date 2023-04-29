@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -390,13 +391,17 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         from trivia_api.models import Game
 
         game = Game.objects.get(id=self.game_id)
-        round = game.current_round
-        round.qualify_ended = datetime.datetime.now()
-        round.save()
+        c_round = game.current_round
+        c_round.qualify_ended = datetime.datetime.now()
+        c_round.save()
 
-        round.create_qualifications()
+        c_round.create_qualifications()
 
-        return [{'userid': q.player.id, 'correct_answer': round.correct_answer, 'graded_answer': q.move.answer, 'grade': q.move.evaluation} for q in round.qualifications.all()]
+        return [{'userid': q.player.id,
+                 'correct_answer': c_round.correct_answer,
+                 'graded_answer': q.move.answer,
+                 'grade': q.move.evaluation
+                 } for q in c_round.qualifications.all()]
 
     @database_sync_to_async
     def asses_ended(self):
@@ -511,6 +516,13 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
         return fault.player.id, fault.category, is_disqualified
 
+    @database_sync_to_async
+    def get_moves_count(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        return game.current_round.moves_count
+
     async def game_start_time(self):
         await asyncio.sleep(self.START_TIME)
 
@@ -557,13 +569,22 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             player_id, category, is_disqualified = await self.create_fault(p.id, 'AT')
             await self.send_fault(player_id, category, is_disqualified)
 
-        await self.round_qualify_timer()
+        # TODO: check si hay respuestas
+        moves_count = await self.get_moves_count()
+        if moves_count == 0:
+            try:
+                await self.qualify_ended()
+                await self.asses_ended()
+                await self.finish_round()
+            except Exception:
+                traceback.print_exc()
+        else:
+            await self.round_qualify_timer()
 
     async def round_qualify_timer(self):
         missing_evaluations = await self.get_missing_evaluations()
 
         if len(missing_evaluations) > 0:
-            print(f'round_qualify_timer starts: {self.QUALIFY_TIME + self.DELTA_TIME}')
             await asyncio.sleep(self.QUALIFY_TIME + self.DELTA_TIME)
 
             missing_evaluations = await self.get_missing_evaluations()

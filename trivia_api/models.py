@@ -151,6 +151,10 @@ class Round(models.Model):
         return [p for p in self.game.active_players if p.id not in move_players]
 
     @property
+    def moves_count(self):
+        return self.moves.exclude(player=self.nosy).count()
+
+    @property
     def missing_evaluations(self):
         return [m for m in self.moves.filter(evaluation__isnull=True).exclude(player=self.nosy).all()]
 
@@ -186,11 +190,14 @@ class Round(models.Model):
             negative = Qualification.objects.filter(move__round=self, is_correct=False).count()
             qualifications = Qualification.objects.filter(move__round=self).count()
 
-            if (qualifications-negative)/qualifications >= 0.8:
+            if qualifications > 0:
+                if (qualifications-negative)/qualifications >= 0.8:
+                    return 3
+                elif (qualifications-negative)/qualifications >= 0.5:
+                    return 1
+                return -2
+            else:
                 return 3
-            elif (qualifications-negative)/qualifications >= 0.5:
-                return 1
-            return -2
         else:
             return None
 
@@ -218,7 +225,7 @@ class Round(models.Model):
             m.auto_grade()
 
     def create_qualifications(self):
-        if self.qualifications.count() == 0:
+        if self.qualifications.count() == 0 and self.moves_count > 0:
             valid_moves = list(self.moves.exclude(player=self.nosy).order_by('created'))
             next_move = 0
             for p in self.players_without_nosy:
