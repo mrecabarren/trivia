@@ -49,7 +49,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         creator, is_open, player_count = await self.get_game_params()
 
         if self.scope['user'].id == creator.id:
-            if player_count > 1:
+            if player_count > 2:
                 if is_open:
                     if rounds is not None and rounds >= player_count:
                         players = await self.start_game(rounds)
@@ -75,7 +75,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             else:
                 await self.send_json(content={
                     'type': 'error',
-                    'message': 'Para iniciar la partida debe tener al menos 2 jugadores inscritos'
+                    'message': 'Para iniciar la partida debe tener al menos 3 jugadores inscritos'
                 })
         else:
             await self.send_json(content={
