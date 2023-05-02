@@ -62,7 +62,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                             }}
                         )
 
-                        self.start_timer_task = asyncio.create_task(self.game_start_time())
+                        self.start_timer_task = asyncio.create_task(self.game_start_timer())
                     else:
                         await self.send_json(content={
                             'type': 'error',
@@ -252,6 +252,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
             if round_number is not None:
                 await self.start_round_message(round_number, nosy_id)
             else:
+                await self.finish_game()
                 await self.channel_layer.group_send(
                     self.group_name, {"type": "game_message", "message": {
                         'type': 'game_result',
@@ -259,7 +260,11 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                     }}
                 )
         else:
-            await self.send_canceled_message()
+            await self.cancel_game()
+
+    async def cancel_game(self):
+        await self.finish_game()
+        await self.send_canceled_message()
 
     async def send_fault(self, player_id, category, is_disqualified):
         await self.channel_layer.group_send(
@@ -328,6 +333,14 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         return [{'username': p.username, 'userid': p.id} for p in game.players.all()]
 
     @database_sync_to_async
+    def finish_game(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        game.ended = datetime.datetime.now()
+        game.save()
+
+    @database_sync_to_async
     def next_round(self):
         from trivia_api.models import Game
 
@@ -382,9 +395,9 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         from trivia_api.models import Game
 
         game = Game.objects.get(id=self.game_id)
-        round = game.current_round
-        round.answer_ended = datetime.datetime.now()
-        round.save()
+        c_round = game.current_round
+        c_round.answer_ended = datetime.datetime.now()
+        c_round.save()
 
     @database_sync_to_async
     def qualify_ended(self):
@@ -523,7 +536,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         game = Game.objects.get(id=self.game_id)
         return game.current_round.moves_count
 
-    async def game_start_time(self):
+    async def game_start_timer(self):
         await asyncio.sleep(self.START_TIME)
 
         round_number, nosy_id = await self.next_round()
@@ -548,7 +561,7 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                 round_number, nosy = await self.restart_round()
                 await self.start_round_message(round_number, nosy.id)
             else:
-                await self.send_canceled_message()
+                await self.cancel_game()
 
     async def round_answer_timer(self):
         game = await self.get_game_base()
