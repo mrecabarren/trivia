@@ -131,6 +131,7 @@ class GameViewSet(viewsets.ModelViewSet):
                     {'id': p.id, 'score': game.player_score(p.id), 'faults': game.player_faults(p.id)}
                     for p in game.players.all()
                 ],
+                'ended': game.ended,
             }
             return Response(
                 data=game_state,
