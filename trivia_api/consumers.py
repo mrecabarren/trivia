@@ -536,6 +536,13 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         game = Game.objects.get(id=self.game_id)
         return game.current_round.moves_count
 
+    @database_sync_to_async
+    def get_round_index(self):
+        from trivia_api.models import Game
+
+        game = Game.objects.get(id=self.game_id)
+        return game.current_round.index
+
     async def game_start_timer(self):
         await asyncio.sleep(self.START_TIME)
 
@@ -598,22 +605,26 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
         missing_evaluations = await self.get_missing_evaluations()
 
         if len(missing_evaluations) > 0:
+            round_idx = await self.get_round_index()
+
             await asyncio.sleep(self.QUALIFY_TIME + self.DELTA_TIME)
+            round_idx_post = await self.get_round_index()
 
-            missing_evaluations = await self.get_missing_evaluations()
-            if len(missing_evaluations) > 0:
-                await self.channel_layer.group_send(
-                    self.group_name, {"type": "game_message", "message": {
-                        'type': 'qualify_timeout',
-                    }}
-                )
-                await self.close_evaluations()
+            if round_idx == round_idx_post:
+                missing_evaluations = await self.get_missing_evaluations()
+                if len(missing_evaluations) > 0:
+                    await self.channel_layer.group_send(
+                        self.group_name, {"type": "game_message", "message": {
+                            'type': 'qualify_timeout',
+                        }}
+                    )
+                    await self.close_evaluations()
 
-                player_id, category, is_disqualified = await self.create_nosy_fault('ET')
-                await self.send_fault(player_id, category, is_disqualified)
+                    player_id, category, is_disqualified = await self.create_nosy_fault('ET')
+                    await self.send_fault(player_id, category, is_disqualified)
 
-                qs_data = await self.qualify_ended()
-                await self.send_qualifications(qs_data)
+                    qs_data = await self.qualify_ended()
+                    await self.send_qualifications(qs_data)
         else:
             try:
                 qs_data = await self.qualify_ended()
