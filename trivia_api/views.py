@@ -128,7 +128,11 @@ class GameViewSet(viewsets.ModelViewSet):
                     'phase': c_round.current_phase,
                 } if c_round is not None else None,
                 'players': [
-                    {'id': p.id, 'score': game.player_score(p.id), 'faults': game.player_faults(p.id)}
+                    {
+                        'id': p.id,
+                        'username': p.username,
+                        'score': game.player_score(p.id),
+                        'faults': game.player_faults(p.id)}
                     for p in game.players.all()
                 ],
                 'ended': game.ended,
