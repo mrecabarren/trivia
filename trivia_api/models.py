@@ -309,3 +309,16 @@ class Fault(models.Model):
 
     def __str__(self):
         return f'{self.player} [{self.round}]'
+
+
+class ActionError(models.Model):
+    player = models.ForeignKey(User, on_delete=models.CASCADE, related_name='errors')
+    round = models.ForeignKey(Round, null=True, blank=True, default=None, on_delete=models.CASCADE,
+                              related_name='errors')
+    action = models.TextField()
+    error_message = models.TextField()
+
+    created = models.DateTimeField(auto_now_add=True, blank=True)
+
+    def __str__(self):
+        return f'{self.player} [{self.round.game}] -- {self.action}'

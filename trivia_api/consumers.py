@@ -64,25 +64,33 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
                         self.start_timer_task = asyncio.create_task(self.game_start_timer())
                     else:
+                        error_message = 'El número de rondas debe ser mayor o igual al número de jugadores'
                         await self.send_json(content={
                             'type': 'error',
-                            'message': 'El número de rondas debe ser mayor o igual al número de jugadores'
+                            'message': error_message
                         })
+                        await self.create_error("start", error_message)
                 else:
+                    error_message = 'La partida ya había sido iniciada'
                     await self.send_json(content={
                         'type': 'error',
-                        'message': 'La partida ya había sido iniciada'
+                        'message': error_message
                     })
+                    await self.create_error("start", error_message)
             else:
+                error_message = 'Para iniciar la partida debe tener al menos 3 jugadores inscritos'
                 await self.send_json(content={
                     'type': 'error',
-                    'message': 'Para iniciar la partida debe tener al menos 3 jugadores inscritos'
+                    'message': error_message
                 })
+                await self.create_error("start", error_message)
         else:
+            error_message = 'La partida solo la puede iniciar quien la creó'
             await self.send_json(content={
                 'type': 'error',
-                'message': 'La partida solo la puede iniciar quien la creó'
+                'message': error_message
             })
+            await self.create_error("start", error_message)
 
     async def action_question(self, q_text):
         creator, is_open, player_count = await self.get_game_params()
@@ -100,20 +108,26 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                     )
                     self.answer_timer_task = asyncio.create_task(self.round_answer_timer())
                 else:
+                    error_message = 'Ya se entregó la pregunta de esta ronda'
                     await self.send_json(content={
                         'type': 'error',
-                        'message': 'Ya se entregó la pregunta de esta ronda'
+                        'message': error_message
                     })
+                    await self.create_error("question", error_message)
             else:
+                error_message = 'Solo el pregunton puede enviar la pregunta de la ronda'
                 await self.send_json(content={
                     'type': 'error',
-                    'message': 'Solo el pregunton puede enviar la pregunta de la ronda'
+                    'message': error_message
                 })
+                await self.create_error("question", error_message)
         else:
+            error_message = 'El juego aun no comienza'
             await self.send_json(content={
                 'type': 'error',
-                'message': 'El juego aun no comienza'
+                'message': error_message
             })
+            await self.create_error("question", error_message)
 
     async def action_answer(self, a_text):
         creator, is_open, player_count = await self.get_game_params()
@@ -135,25 +149,33 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                                 }}
                             )
                     else:
+                        error_message = 'No se puede cambiar la respuesta previamente enviada'
                         await self.send_json(content={
                             'type': 'error',
-                            'message': 'No se puede cambiar la respuesta previamente enviada'
+                            'message': error_message
                         })
+                        await self.create_error("answer", error_message)
                 else:
+                    error_message = 'Ya no se aceptan respuestas en esta ronda'
                     await self.send_json(content={
                         'type': 'error',
-                        'message': 'Ya no se aceptan respuestas en esta ronda'
+                        'message': error_message
                     })
+                    await self.create_error("answer", error_message)
             else:
+                error_message = 'Aun no está la pregunta de la ronda'
                 await self.send_json(content={
                     'type': 'error',
-                    'message': 'Aun no está la pregunta de la ronda'
+                    'message': error_message
                 })
+                await self.create_error("answer", error_message)
         else:
+            error_message = 'El juego aun no comienza'
             await self.send_json(content={
                 'type': 'error',
-                'message': 'El juego aun no comienza'
+                'message': error_message
             })
+            await self.create_error("answer", error_message)
 
     async def action_qualify(self, userid, grade):
         creator, is_open, player_count = await self.get_game_params()
@@ -165,30 +187,38 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                     status = await self.save_answer_evaluation(userid, grade)
 
                     if not status:
+                        error_message = 'Este usuario no ha enviado una respuesta para ser evaluada'
                         await self.send_json(content={
                             'type': 'error',
-                            'message': 'Este usuario no ha enviado una respuesta para ser evaluada'
+                            'message': error_message
                         })
+                        await self.create_error("qualify", error_message)
                     else:
                         qualify_ready = await self.check_qualify_status()
                         if qualify_ready:
                             qs_data = await self.qualify_ended()
                             await self.send_qualifications(qs_data)
                 else:
+                    error_message = 'Ya no se aceptan calificaciones'
                     await self.send_json(content={
                         'type': 'error',
-                        'message': 'Ya no se aceptan calificaciones'
+                        'message': error_message
                     })
+                    await self.create_error("qualify", error_message)
             else:
+                error_message = 'Solo el pregunton puede calificar las respuestas'
                 await self.send_json(content={
                     'type': 'error',
-                    'message': 'Solo el pregunton puede calificar las respuestas'
+                    'message': error_message
                 })
+                await self.create_error("qualify", error_message)
         else:
+            error_message = 'El juego aun no comienza'
             await self.send_json(content={
                 'type': 'error',
-                'message': 'El juego aun no comienza'
+                'message': error_message
             })
+            await self.create_error("qualify", error_message)
 
     async def action_assess(self, is_correct):
         creator, is_open, player_count = await self.get_game_params()
@@ -199,20 +229,26 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
                 status = await self.save_assess(self.scope['user'].id, is_correct)
 
                 if not status:
+                    error_message = 'No hay una evaluación activa para este usuario'
                     await self.send_json(content={
                         'type': 'error',
-                        'message': 'No hay una evaluación activa para este usuario'
+                        'message': error_message
                     })
+                    await self.create_error("assess", error_message)
             else:
+                error_message = 'Ya no se aceptan evaluaciones en esta ronda'
                 await self.send_json(content={
                     'type': 'error',
-                    'message': 'Ya no se aceptan evaluaciones en esta ronda'
+                    'message': error_message
                 })
+                await self.create_error("assess", error_message)
         else:
+            error_message = 'El juego aun no comienza'
             await self.send_json(content={
                 'type': 'error',
-                'message': 'El juego aun no comienza'
+                'message': error_message
             })
+            await self.create_error("assess", error_message)
 
     async def start_round_message(self, round_number, nosy_id):
         await self.channel_layer.group_send(
@@ -542,6 +578,19 @@ class TriviaConsumer(AsyncJsonWebsocketConsumer):
 
         game = Game.objects.get(id=self.game_id)
         return game.current_round.index
+
+    @database_sync_to_async
+    def create_error(self, action, error_message):
+        from trivia_api.models import Game, ActionError
+        from django.contrib.auth.models import User
+
+        game = Game.objects.get(id=self.game_id)
+        c_round = game.current_round
+
+        ActionError.objects.create(player=self.scope["user"],
+                                   round=c_round,
+                                   action=action,
+                                   error_message=error_message)
 
     async def game_start_timer(self):
         await asyncio.sleep(self.START_TIME)

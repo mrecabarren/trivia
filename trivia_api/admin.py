@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from trivia_api.models import Game, Round, Move, Qualification, Fault
+from trivia_api.models import Game, Round, Move, Qualification, Fault, ActionError
 
 
 @admin.register(Game)
@@ -73,3 +73,17 @@ class FaultAdmin(admin.ModelAdmin):
     @admin.display(description="round_index")
     def round_index(self, obj):
         return obj.round.index
+
+
+@admin.register(ActionError)
+class ActionErrorAdmin(admin.ModelAdmin):
+    list_display = ('game', 'round_index', 'player', 'action', 'error_message')
+    list_filter = ('player', 'action', 'round__game')
+
+    @admin.display(description="game")
+    def game(self, obj):
+        return obj.round.game if obj.round is not None else None
+
+    @admin.display(description="round_index")
+    def round_index(self, obj):
+        return obj.round.index if obj.round is not None else None
