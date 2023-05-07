@@ -150,6 +150,50 @@ class GameViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_423_LOCKED
             )
 
+    @action(
+        detail=False,
+        methods=['get'],
+    )
+    def recent_states(self, request):
+        games = Game.objects.filter(started__isnull=False).order_by("-started")[:10]
+
+        games_state = []
+
+        for game in games:
+            c_round = game.current_round
+            gs = {
+                'id': game.id,
+                'name': game.name,
+                'rounds': game.rounds_number,
+                'question_time': game.question_time,
+                'answer_time': game.answer_time,
+                'creator': game.creator.username,
+                'current_round': game.current_round_idx,
+                'round': {
+                    'started': c_round.started,
+                    'nosy': c_round.nosy.id if c_round.nosy is not None else None,
+                    'question': c_round.question,
+                    'phase': c_round.current_phase,
+                } if c_round is not None else None,
+                'players': [
+                    {
+                        'id': p.id,
+                        'username': p.username,
+                        'score': game.player_score(p.id),
+                        'faults': game.player_faults(p.id),
+                        'errors': game.player_errors(p.id),
+                    }
+                    for p in game.players.all()
+                ],
+                'started': game.started,
+                'ended': game.ended,
+            }
+            games_state.append(gs)
+        return Response(
+            data=games_state,
+            status=status.HTTP_200_OK
+        )
+
     def perform_create(self, serializer):
         instance = serializer.save(creator=self.request.user)
         instance.players.add(self.request.user)

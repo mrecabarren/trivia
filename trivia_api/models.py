@@ -111,6 +111,10 @@ class Game(models.Model):
         fault_count = Fault.objects.filter(round__game=self, player=p_id).aggregate(models.Sum('fault_value'))
         return fault_count['fault_value__sum'] if fault_count['fault_value__sum'] is not None else 0
 
+    def player_errors(self, p_id):
+        errors_count = ActionError.objects.filter(round__game=self, player=p_id).count()
+        return errors_count if errors_count is not None else 0
+
     def get_scores(self):
         return {p.id: self.player_score(p.id) for p in self.players.all()}
 
